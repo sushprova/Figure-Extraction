@@ -1,2 +1,2 @@
 # Figure-Extraction
-Extracting graphs, figures and tables from images
+Extracting graphs, figures and tables from image files.
