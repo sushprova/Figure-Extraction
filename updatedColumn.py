@@ -19,14 +19,15 @@ from skimage.feature import local_binary_pattern
 from scipy import stats
 import os
 from pdf2image import convert_from_path
+import pytesseract
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
 
 # 
 def read_and_preprocess_image(image_path):
+######passed in the original image path      does color thresholding and returns img
     img = cv2.imread(image_path)
     imgray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-#     plt.figure()
-#     plt.imshow(img, cmap='gray')
-#     plt.show()
 
 # TODO hard coded 230, 255(white) 
 # anything higher than 230 will turn into white and lower than 230 will be black.
@@ -37,6 +38,8 @@ def read_and_preprocess_image(image_path):
 #     plt.show()
     return thresh, img
 
+
+#not being used right now
 def remove_header_footer(image_path):
     # Apply thresholding to get binary image
     _, binary = cv2.threshold(imgray, 200, 255, cv2.THRESH_BINARY_INV)
@@ -87,6 +90,7 @@ def remove_header_footer(image_path):
     return cropped_image_rgb
 
 def trim_white_margins_lr(pixel_array):
+    #####passed on "thresh"             takes out only the left and right margin
     col_sums = np.sum(pixel_array, axis=0)
     num_rows = pixel_array.shape[0]
     white_col_sum = 255 * num_rows
@@ -108,33 +112,41 @@ def trim_white_margins_lr(pixel_array):
     #
     plt.figure()
     plt.imshow(col_trimmed_array, cmap='gray')
-    plt.show()
+    #plt.show()
     #
     return col_trimmed_array, start_index
 
 
-#
-#
-#
-def trim_white_margins(pixel_array):
-    row_sums = np.sum(pixel_array, axis=1)
-    num_columns = pixel_array.shape[1]
-    white_row_sum = 255 * num_columns
-    #
-    start_index = 0
-    roughly = 0.99
-    while start_index < len(row_sums) and row_sums[start_index] >= white_row_sum*roughly:
-        start_index += 1
-    #
-    end_index = len(row_sums) - 1
-    while end_index >= 0 and row_sums[end_index] >= white_row_sum*roughly:
-        end_index -= 1
-    #
-    row_trimmed_array = pixel_array[start_index:end_index+1, :]
-    return row_trimmed_array, start_index
-
 def col_sum(array):
     return np.sum(array, axis=0), 255 * array.shape[0]
+
+#
+def identify_col_gaps(col_sum, white_col_sum,array):
+    min_gap_col = 0.03* array.shape[1]
+    gap_indices = []
+    in_gap = False
+    current_gap_start = None
+    #
+    for col_index, value in enumerate(col_sum):
+        # HERE TODO: replace 0.96 with a parameter
+        print(f"mmmaaaaaaaaaaaaaaaaaaaaa")
+        if value >= white_col_sum*0.97:
+            if not in_gap:
+                in_gap = True
+                current_gap_start = col_index
+        else:
+            if in_gap:
+                print(f"alalalaaaaaaaaaaaaaaaaaaaa")
+                in_gap = False
+                print(col_index-1 - current_gap_start)
+                if (col_index-1 - current_gap_start) >= min_gap_col:
+                  gap_indices.append((current_gap_start, col_index - 1))
+                  current_gap_start = None
+    #
+    if in_gap and (len(col_sum) - 1 - current_gap_start) >= min_gap_col:
+        gap_indices.append((current_gap_start, len(col_sum) - 1))
+    #
+    return gap_indices
 
 
 # This function returns a list of "gaps", where the left edge is inclusive, and the right
@@ -144,6 +156,7 @@ def col_sum(array):
 # any row or column specific parameters. Alternatively, the identify_line_gaps() code needs to be
 # updated to take care of the edge cases
 # 
+# takes in side_marginless_array 
 def identify_col_gaps2(col_sum, white_col_sum, array):
     min_gap_col = 0.03* array.shape[1]
     gap_indices = []
@@ -184,33 +197,6 @@ def identify_col_gaps2(col_sum, white_col_sum, array):
     return gap_indices
 
 
-def identify_col_gaps(col_sum, white_col_sum,array):
-    min_gap_col = 0.03* array.shape[1]
-    gap_indices = []
-    in_gap = False
-    current_gap_start = None
-    #
-    for col_index, value in enumerate(col_sum):
-        # HERE TODO: replace 0.96 with a parameter
-        print(f"mmmaaaaaaaaaaaaaaaaaaaaa")
-        if value >= white_col_sum*0.97:
-            if not in_gap:
-                in_gap = True
-                current_gap_start = col_index
-        else:
-            if in_gap:
-                print(f"alalalaaaaaaaaaaaaaaaaaaaa")
-                in_gap = False
-                print(col_index-1 - current_gap_start)
-                if (col_index-1 - current_gap_start) >= min_gap_col:
-                  gap_indices.append((current_gap_start, col_index - 1))
-                  current_gap_start = None
-    #
-    if in_gap and (len(col_sum) - 1 - current_gap_start) >= min_gap_col:
-        gap_indices.append((current_gap_start, len(col_sum) - 1))
-    #
-    return gap_indices
-
 
 
 # Based on the histogram calculated, we divide the images
@@ -250,6 +236,30 @@ def divide_to_columns(image, gap_indices, orientation_flag):
     if (end - start) >= 0.1 * image.shape[1]:
         parts.append((start, end))
     return parts
+
+
+#
+#
+def trim_white_margins(pixel_array):
+    #####passed in leftright marginless array           removes the margin and returns the top margin  
+    row_sums = np.sum(pixel_array, axis=1)
+    num_columns = pixel_array.shape[1]
+    white_row_sum = 255 * num_columns
+    #
+    start_index = 0
+    roughly = 0.99
+    while start_index < len(row_sums) and row_sums[start_index] >= white_row_sum*roughly:
+        start_index += 1
+    #
+    end_index = len(row_sums) - 1
+    while end_index >= 0 and row_sums[end_index] >= white_row_sum*roughly:
+        end_index -= 1
+    #
+    row_trimmed_array = pixel_array[start_index:end_index+1, :]
+    return row_trimmed_array, start_index
+
+
+
 
 # divide the whole img into columns
 def divide_image(image, gap_indices):
@@ -371,6 +381,54 @@ def has_significant_texture(lbp, threshold=0.9):
     return hist.max() > threshold
 
 
+
+def highlight_word(img, words_to_find):
+    #image = cv2.imread(img)
+    # Convert image to grayscale
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # Perform OCR using pytesseract with bounding box information
+    custom_config = r'--oem 3 --psm 6'
+    data = pytesseract.image_to_data(gray, config=custom_config, output_type=pytesseract.Output.DICT)
+    # print(data)
+
+    boxes = []
+    n_boxes = len(data['text'])
+
+    for word_to_find in words_to_find:
+      for i in range(n_boxes):
+        if int(data['conf'][i]) > 80:  # Confidence threshold
+            if word_to_find.lower() in data['text'][i].lower():
+                # print(data['text'][i])
+                # print(data['conf'][i])
+            #if word_to_find in data['text'][i]:
+                (x, y, w, h) = (data['left'][i], data['top'][i], data['width'][i], data['height'][i])
+                boxes.append((x, y, w, h))
+
+                img = cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                # cv2.putText(image, word_to_find, (x, y -4), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (36, 255, 12), 2)
+
+    # Display the image with highlighted word
+    # cv2.imshow(img)
+    return boxes
+
+def extract_text_blocks(i, text_blocks, parts, all_cols):
+    col = all_cols[i]
+    col_start, col_end = col  # Unpack the start and end of the column
+
+    # Iterate over each text block in the column
+    for y_start, y_end in parts:
+        x = col_start
+        y = y_start
+        w = col_end - col_start
+        h = y_end - y_start
+
+        # Append the box in (x, y, w, h) format
+        text_blocks.append((x, y, w, h))
+
+
+
+
 # This is the main function that takes an article page as a PNG image, and
 # attempts to extract "regions" that are NON-text - figures, tables - and
 # bound the detected region with a bounding box.
@@ -383,13 +441,14 @@ def process_image2(image_path, out_prefix):
     thresh, img = read_and_preprocess_image(image_path)
     #
     # print(f" ......  thresh={thresh}")
-    #
+    word_boxes = highlight_word(img, ["Fig.", "Figure", "Table"])
+    print("word boxes are")
+    print(word_boxes)
+
+
     side_marginless_array, left_margin = trim_white_margins_lr(thresh)
     #
     col_sum_values, white_col_sum_value = col_sum(side_marginless_array)
-    #print(col_sum_values)
-    #print(side_marginless_array.shape[0])
-    #print(side_marginless_array.shape[1])
 
     #
     dim=thresh.shape[0]
@@ -400,7 +459,9 @@ def process_image2(image_path, out_prefix):
     x = range(len(col_sum_values))
     # plt.plot(x, col_sum_values)
     plt.plot(x, avg_col_sum_values)
-    plt.show()
+    #plt.show()
+
+
     #    
     #    plt.figure(figsize=(10, 5))
     #    plt.imshow(thresh, cmap='gray')
@@ -414,17 +475,19 @@ def process_image2(image_path, out_prefix):
 
     #a list of all the columns in the page
     all_cols = divide_to_columns(side_marginless_array, gap_indices, 0)
+    print("all_cols are:")
+    print(all_cols)
 
 
-
-    
-    #
     marginless_arrays_processed = []
     top_margin_array = []
-    #
-    final_result = []
 
-    print(f"all_cols listed:")
+
+    box = []
+    imagebox =[]
+# text_blocks are to hold the text blocks in the uniform box format
+    text_blocks = []
+
     
     for col in all_cols:
         marginless_array, top_margin = trim_white_margins(side_marginless_array[:, col[0]:col[1]])
@@ -432,8 +495,12 @@ def process_image2(image_path, out_prefix):
         # #top_margin stores all the margins for all the columns 
         marginless_arrays_processed.append(marginless_array)
         top_margin_array.append(top_margin)
-        print(f"columns are, ({col[0]}, {col[1]})")
-    #
+        # print("marginless_arrays_processed is:")
+        # print(marginless_arrays_processed)
+        
+        # print(f"columns are, ({col[0]}, {col[1]})")
+
+    
 
 
 
@@ -442,8 +509,12 @@ def process_image2(image_path, out_prefix):
         #
         row_sums, white_row_sum = calculate_row_sums(marginless_array_processed)
         # convert the histogram into a percentage for easy of reasoning
+
+        #dim2 is the number of columns 
         dim2 = marginless_array_processed.shape[1]
+        #convert each row sum into a percentage of the total possible white pixels in that row
         srow_sums = row_sums/255/dim2
+
         # average line spacing is about 30 pixels, without scaling (from observation)
         # the following looks wrong for the 8th page, right handside part
 
@@ -468,16 +539,20 @@ def process_image2(image_path, out_prefix):
         print(parts)
 
 
+
+
+
         #quit()
-        
+
+
         for start, end in parts:
             part = marginless_array_processed[start:end, 0:marginless_array_processed.shape[1]]
-            # print(part)
-            # if part.size >1:
+
             # Let us expect any part to be at least 36 pixels in size
             # if part.size >=36:
             # TODO: this number should come from resolution/proportion of the paper
             #if part.size >=60:
+
             # considering 5-10% (average 7.5%) 0f the paper height would be good amount for meaningful chunk.
             if part.size >= dim2*0.075:
                 lbp = analyze_texture(part)
@@ -502,7 +577,10 @@ def process_image2(image_path, out_prefix):
                         bottom_right = (left_margin + last_col_width + x + marginless_array_processed.shape[1], end + top_margin_array[i])
                     #
                     cv2.rectangle(img, top_left, bottom_right, (0, 0, 255), 2)
-                    #
+                    box.append((top_left, bottom_right))
+                    
+                    #imagebox is just box but in a box object format (x ,y,w,h)
+                    imagebox.append((top_left[0], top_left[1], bottom_right[0]-top_left[0], bottom_right[1]-top_left[1]))
                     # cv2.imshow('Image with Rectangle', img)
                     #
                     # plt.figure()
@@ -514,61 +592,23 @@ def process_image2(image_path, out_prefix):
             # else:
             #     print(f"skip {image_path} {i}")
             #     break        
-        # return final_result
         # cv2.imwrite(image_path, img)
-        # write the results to another directory called "results"
+
+        print(len(imagebox))
+        if len(imagebox) > 0:
+        #extract all the text box in the uniform box format
+            extract_text_blocks(i, text_blocks, parts, all_cols)
+    
     outpath = out_prefix+image_path
     cv2.imwrite(outpath, img)
 
+    print(" imagebox and word_box printing")
+    print ( imagebox, word_boxes)
 
-def process_image(image_path):
-    thresh, img = read_and_preprocess_image(image_path)
-    side_marginless_array, left_margin = trim_white_margins_lr(thresh)
-    #
-    col_sum_values, white_col_sum_value = col_sum(side_marginless_array)
-    gap_indices = identify_col_gaps(col_sum_values, white_col_sum_value,side_marginless_array )
-    all_cols = divide_image(side_marginless_array, gap_indices)
-    #
-    marginless_arrays_processed = []
-    top_margin_array = []
-    #
-    final_result = []
-    for col in all_cols:
-        marginless_array, top_margin = trim_white_margins(side_marginless_array[:, col[0]:col[1]])
-        marginless_arrays_processed.append(marginless_array)
-        top_margin_array.append(top_margin)
-        #
-    for i, marginless_array_processed in enumerate(marginless_arrays_processed):
-        marginless_array_improved_row_sum = convert_non_255_to_zero(marginless_array_processed)
-        #
-        row_sums, white_row_sum = calculate_row_sums(marginless_array_processed)
-        average_line_gap, white_space_lengths = identify_line_gaps(row_sums, white_row_sum)
-        significant_gaps = find_significant_gaps(row_sums, white_row_sum, average_line_gap)
-        #
-        parts = divide_image(marginless_array_processed, significant_gaps)
-        print(parts)
-        for start, end in parts:
-            part = marginless_array_processed[start:end, 0:marginless_array_processed.shape[1]]
-            # print(part)
-            if part.size >1:
-                lbp = analyze_texture(part)
-                if has_significant_texture(lbp):
-                    if i == 0:
-                        final_part = img[start+top_margin_array[i]:end+ top_margin_array[i], left_margin:marginless_array_processed.shape[1]+left_margin]
-                    else:
-                        x = all_cols[i][0] - all_cols[i-1][1]
-                        last_col_width = all_cols[i-1][1]
-                        final_part = img[start+top_margin_array[i]:end+ top_margin_array[i], left_margin+last_col_width+x:marginless_array_processed.shape[1]+left_margin+last_col_width+x]
-                    #
-                    # plt.figure()
-                    # plt.imshow(final_part, cmap='gray')
-                    # plt.title(f'Part: Rows {start+top_margin_array[i]} to {end+top_margin_array[i]}')
-                    # plt.show()
-                    final_result.append(final_part)
-            else:
-                print(f"skip {image_path} {i}")
-                break        
-    return final_result
+    print("text_blocks are:")
+    print(text_blocks)
+
+
 
 
 
@@ -590,9 +630,13 @@ def convert_pdfs_to_images(pdf_folder, image_folder):
                 image_path = os.path.join(image_folder, f"{pdf_name}_{i + 1}.png")
                 image.save(image_path, 'PNG')
 
+
+
+
+
+
 # Start of the main process, currently a script for debugging
 # def main():
-
 pdf_folder = "C:\summer2024\Figure-Extraction\paper_pdf"
 # pdf_folder = 'physics_papers'
 #image_folder = 'test1999_inversion_xia_image'
@@ -604,6 +648,7 @@ image_folder = 'imageFromPaper'
 
 
 # use the prefix to make sure output images are not overwriting the input images
+#########this is the last folder being used.
 out_prefix = 'results_29_'
 out_folder=out_prefix+image_folder
 
@@ -611,14 +656,14 @@ out_folder=out_prefix+image_folder
 if not os.path.exists(out_folder):
     os.makedirs(out_folder)
 
-#figures_folder =  '12381735_figures'
-
 
 # if not os.path.exists(figures_folder):
 if not os.path.exists(image_folder):
     # print("going to make figures_dir")
     # os.makedirs(figures_folder)
     print(f"beging making images of the document and put them into {image_folder}")
+    #once the image folder is made, any manual changes 
+    # to that folder won't be seen while running the code
     convert_pdfs_to_images(pdf_folder, image_folder)
     print("after making the images")
 else:
