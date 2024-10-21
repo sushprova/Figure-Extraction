@@ -442,8 +442,8 @@ def process_image2(image_path, out_prefix):
     #
     # print(f" ......  thresh={thresh}")
     word_boxes = highlight_word(img, ["Fig.", "Figure", "Table"])
-    print("word boxes are")
-    print(word_boxes)
+    # print("word boxes are")
+    # print(word_boxes)
 
 
     side_marginless_array, left_margin = trim_white_margins_lr(thresh)
@@ -469,7 +469,7 @@ def process_image2(image_path, out_prefix):
     #    
 
     gap_indices = identify_col_gaps2(col_sum_values, white_col_sum_value, side_marginless_array)
-    print (gap_indices)
+    # print (gap_indices)
     #print (f" lalalala laaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 
@@ -594,10 +594,10 @@ def process_image2(image_path, out_prefix):
             #     break        
         # cv2.imwrite(image_path, img)
 
-        print(len(imagebox))
-        if len(imagebox) > 0:
-        #extract all the text box in the uniform box format
-            extract_text_blocks(i, text_blocks, parts, all_cols)
+    print(len(imagebox))
+    if len(imagebox) > 0:
+    #extract all the text box in the uniform box format
+        extract_text_blocks(i, text_blocks, parts, all_cols)
     
     outpath = out_prefix+image_path
     cv2.imwrite(outpath, img)
