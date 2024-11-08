@@ -412,6 +412,8 @@ def highlight_word(img, words_to_find):
     # cv2.imshow(img)
     return boxes
 
+#this method won't get the actual parts cause when it calculates, the margins
+# are already trimmed off
 def extract_text_blocks(i, text_blocks, parts, all_cols):
     col = all_cols[i]
     col_start, col_end = col  # Unpack the start and end of the column
@@ -427,6 +429,91 @@ def extract_text_blocks(i, text_blocks, parts, all_cols):
         text_blocks.append((x, y, w, h))
 
 
+#  Finds the closest aligned word box (least y-distance) for each image box, 
+#  where the word box must be aligned in the x-axis and have a greater y-value.
+    
+def aligned_boxes(image_boxes, word_boxes):
+
+#    Returns:A dictionary where the key is the image box and the value is the closest aligned word box.
+#    If no aligned word box is found, the value will be None.
+
+    result = {}
+
+    for img in image_boxes:
+        closest_word = None
+        # Initialize with infinity
+        min_y_distance = float('inf')  
+
+        for word in word_boxes:
+            # if img[0] == word[0] and word[1] > img[1]:
+            if abs(img[0] - word[0]) <= 5  and word[1] > img[1]:
+                y_distance = word[1] - img[1]
+
+                if y_distance < min_y_distance:
+                    min_y_distance = y_distance
+                    closest_word = word
+
+        #result[tuple(img.values())] = closest_word  
+        # img_key = (img['x'], img['y'], img['w'], img['h'])
+        result[img] = closest_word
+    return result
+
+def resides_in(box1, box2, tolerance=5):
+    return (
+        box2[0] - tolerance <= box1[0] and  
+        box2[0] + box2[2] + tolerance >= box1[0] + box1[2] and  
+        box2[1] - tolerance <= box1[1] and  
+        box2[1] + box2[3] + tolerance >= box1[1] + box1[3]  
+    )
+
+
+def merge_boxes(box1, box2):
+    """
+    Returns:
+    dict: A dictionary representing the merged box with keys 'x', 'y', 'w','h'.
+    """
+    min_x = min(box1[0], box2[0])
+    min_y = min(box1[1], box2[1])
+    
+    # max_x = max(box1['x'] + box1['w'], box2['x'] + box2['w'])
+    max_x = max(box1[0] + box1[2], box2[0] + box2[2])
+    # max_y = max(box1['y'] + box1['h'], box2['y'] + box2['h'])
+    max_y = max(box1[1] + box1[3], box2[1] + box2[3])
+
+####if we do the consider boxes for same columns 
+    merged_width = max_x - min_x
+    merged_height = max_y - min_y
+
+    # Return a merged box as
+    return (min_x, min_y, merged_width, merged_height)
+    
+
+def find_blocks_to_merge(im_dict, transformed_part_box):
+    merged_boxes = []
+    #merged_box = None
+    for key,value in im_dict.items():
+        #if key is None or value is None:
+        if key is None or value is None:
+            continue
+        box2 = None
+        for block in transformed_part_box:
+            # if resides_in(key,block):
+            #     box1 = block
+            if resides_in(value, block):
+                box2 = block
+        #if box1 and box2:
+        if box2:
+            merged_box = merge_boxes(key, box2)
+            merged_boxes.append(merged_box)
+
+    return merged_boxes 
+
+
+def transform_box_in_uniform(part_box):
+    transformed_box = []
+    for (x1, y1), (x2, y2) in part_box:
+        transformed_box.append((x1, y1, x2 - x1, y2 - y1))
+    return transformed_box
 
 
 # This is the main function that takes an article page as a PNG image, and
@@ -487,8 +574,13 @@ def process_image2(image_path, out_prefix):
     imagebox =[]
 # text_blocks are to hold the text blocks in the uniform box format
     text_blocks = []
+# part_box is to hold the actual chunks of text and transformed_part_box will turn it into
+# uniform box format (x,y,w,h)    
+    part_box = []
+    transformed_part_box =[]
+#desired_box is the final box with image and cation
+    desired_box = []
 
-    
     for col in all_cols:
         marginless_array, top_margin = trim_white_margins(side_marginless_array[:, col[0]:col[1]])
         #marginless_arrays_processed stores all the marginless columns
@@ -547,6 +639,26 @@ def process_image2(image_path, out_prefix):
 
         for start, end in parts:
             part = marginless_array_processed[start:end, 0:marginless_array_processed.shape[1]]
+           # cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+            #let's visualize all the parts to see the image positions in parts
+            if i == 0:     
+                top_left = (left_margin, start + top_margin_array[i])
+                bottom_right = (marginless_array_processed.shape[1] + left_margin, end + top_margin_array[i])
+                # cv2.rectangle(img, start+top_margin_array[i], marginless_array_processed.shape[1]+left_margin, (0, 0, 255), 2)                          #
+            else:
+                x = all_cols[i][0] - all_cols[i-1][1]
+                last_col_width = all_cols[i-1][1]
+                # final_part = img[start+top_margin_array[i]:end+ top_margin_array[i], left_margin+last_col_width+x:marginless_array_processed.shape[1]+left_margin+last_col_width+x]
+                #
+                top_left = (left_margin + last_col_width + x, start + top_margin_array[i])
+                bottom_right = (left_margin + last_col_width + x + marginless_array_processed.shape[1], end + top_margin_array[i])
+            #
+            part_box.append((top_left, bottom_right))
+            cv2.rectangle(img, top_left, bottom_right, (0, 255, 0), 2)
+
+            transformed_part_box = transform_box_in_uniform(part_box)
+
 
             # Let us expect any part to be at least 36 pixels in size
             # if part.size >=36:
@@ -565,9 +677,7 @@ def process_image2(image_path, out_prefix):
                         top_left = (left_margin, start + top_margin_array[i])
                         bottom_right = (marginless_array_processed.shape[1] + left_margin, end + top_margin_array[i])
                         #
-                        # cv2.rectangle(img, start+top_margin_array[i], marginless_array_processed.shape[1]+left_margin, (0, 0, 255), 2)  
-                        #
-                        # cv2.imshow('Image with Rectangle', img)
+                        # cv2.rectangle(img, start+top_margin_array[i], marginless_array_processed.shape[1]+left_margin, (0, 0, 255), 2)                          #
                     else:
                         x = all_cols[i][0] - all_cols[i-1][1]
                         last_col_width = all_cols[i-1][1]
@@ -605,13 +715,32 @@ def process_image2(image_path, out_prefix):
     print(" imagebox and word_box printing")
     print ( imagebox, word_boxes)
 
-    print("text_blocks are:")
-    print(text_blocks)
+    # print("text_blocks are:")
+    # print(text_blocks)
+    print("transformed_text_blocks are:")
+    print(transformed_part_box)
 
 
+#image_and_word is the dictionary to hold the image: "Fig" pair
+    image_and_word = aligned_boxes(imagebox, word_boxes)
+    print ("image_and_word:",image_and_word)
 
+    desired_box = find_blocks_to_merge(image_and_word, transformed_part_box)
+    
+    if desired_box:
+        print("desired_box:", desired_box)
+        for i in desired_box:
+            (x, y, w, h) = i
+            # print(f"Drawing box at: ({x}, {y}, {w}, {h})")
+            img = cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 8)
+    else:
+        print("No desired box found.")
+    
 
+    cv2.imshow("Image with Boxes", img)
 
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 def convert_pdfs_to_images(pdf_folder, image_folder):
     if not os.path.exists(image_folder):
@@ -649,8 +778,9 @@ image_folder = 'imageFromPaper'
 
 # use the prefix to make sure output images are not overwriting the input images
 #########this is the last folder being used.
-out_prefix = 'results_29_'
+out_prefix = 'results_30_'
 out_folder=out_prefix+image_folder
+
 
 # create the output image folder 
 if not os.path.exists(out_folder):

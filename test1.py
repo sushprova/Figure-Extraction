@@ -156,6 +156,7 @@ def has_significant_texture(lbp, threshold=0.9):
 
     return hist.max() > threshold
 
+
 def process_image(image_path):
     thresh, img = read_and_preprocess_image(image_path)
     side_marginless_array, left_margin = trim_white_margins_lr(thresh)
@@ -190,6 +191,7 @@ def process_image(image_path):
                 if has_significant_texture(lbp):
                     if i == 0:
                         # final_part = img[start+top_margin_array[i]:end+ top_margin_array[i], left_margin:marginless_array_processed.shape[1]+left_margin]
+                        #####ekek col er top margin er size diff hoite pare tai#####
                         top_left = (left_margin, start + top_margin_array[i])
                         bottom_right = (marginless_array_processed.shape[1] + left_margin, end + top_margin_array[i])
                    
